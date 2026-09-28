@@ -1555,7 +1555,10 @@ export const closePositionTool = createTool({
             pnlPercent,
             totalFee,
             reason,
-            'ai_decision',
+            // 人工在监控界面点击「平仓」时 force=true，而 AI 永远不会设置该参数，
+            // 据此把人工操作与 AI 主动平仓区分开，便于统计与审计。
+            // 注意：不能用 reason 区分 —— 'manual_close' 同时也是 AI 的默认平仓原因。
+            force ? 'manual_operation' : 'ai_decision',
             order.id?.toString() || "",
             entryOrderId || null, // ⭐ 关联到具体持仓，用于区分同symbol的不同仓位
             timestamp,

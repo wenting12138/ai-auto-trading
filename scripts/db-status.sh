@@ -267,10 +267,15 @@ async function showStatus() {
           'time_limit': '持仓到期'
         };
         const reasonLabel = reasonMap[event.close_reason] || event.close_reason || '-';
-        const triggerLabel = event.trigger_type === 'ai_decision' ? 'AI决策' 
-          : event.trigger_type === 'price_order' ? '条件单' 
-          : event.trigger_type === 'exchange_order' ? '交易所单'
-          : event.trigger_type || '-';
+        const triggerMap = {
+          'ai_decision': 'AI决策',
+          'manual_operation': '人工操作',
+          'exchange_order': '交易所单',
+          'price_order': '条件单',
+          'system_risk': '系统风控',
+          'auto_fix': '自动修复'
+        };
+        const triggerLabel = triggerMap[event.trigger_type] || event.trigger_type || '-';
         const pnlSign = parseFloat(event.pnl) >= 0 ? '+' : '';
         const pnl = pnlSign + parseFloat(event.pnl).toFixed(2);
         const pnlPercent = pnlSign + parseFloat(event.pnl_percent).toFixed(2) + '%';
