@@ -35,6 +35,7 @@ class TradingMonitor {
         this.duplicateTicker();
         this.loadGitHubStars(); // 加载 GitHub 星标数
         this.initDecisionNavigation(); // 初始化决策导航
+        this.initPositionActions(); // 初始化持仓「平仓」按钮
     }
 
     // 加载初始数据
@@ -176,7 +177,7 @@ class TradingMonitor {
             if (!data.positions || data.positions.length === 0) {
                 // 更新表格
                 if (positionsBody) {
-                    positionsBody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无持仓</td></tr>';
+                    positionsBody.innerHTML = '<tr><td colspan="9" class="empty-state">暂无持仓</td></tr>';
                 }
                 // 更新小卡片
                 if (positionsCardsContainer) {
@@ -232,6 +233,9 @@ class TradingMonitor {
                             <td class="${pnlClass}">
                                 ${unrealizedPnl >= 0 ? '+' : ''}${formatPercent(profitPercent)}%
                             </td>
+                            <td>
+                                <button class="close-position-btn" data-symbol="${pos.symbol}" title="以市价平掉 ${pos.symbol} 全部持仓">平仓</button>
+                            </td>
                         </tr>
                     `;
                 }).join('');
@@ -275,6 +279,60 @@ class TradingMonitor {
         } catch (error) {
             console.error('加载持仓数据失败:', error);
         }
+    }
+
+    // 绑定持仓表格的「平仓」按钮
+    // 使用事件委托：表格行每次轮询都会被 innerHTML 重建，直接绑定会丢失
+    initPositionActions() {
+        const positionsBody = document.getElementById('positions-body');
+        if (!positionsBody || positionsBody.dataset.closeBound === 'true') {
+            return;
+        }
+        positionsBody.dataset.closeBound = 'true';
+        positionsBody.addEventListener('click', (event) => {
+            const btn = event.target.closest('.close-position-btn');
+            if (!btn) return;
+            this.handleClosePosition(btn);
+        });
+    }
+
+    // 人工手动平仓
+    async handleClosePosition(btn) {
+        const symbol = btn.dataset.symbol;
+        if (!symbol) return;
+
+        const confirmed = confirm(
+            `确定要以市价平掉 ${symbol} 的全部持仓吗？\n\n` +
+            `该操作立即以当前市场价格成交，不可撤销。`
+        );
+        if (!confirmed) return;
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '平仓中...';
+
+        try {
+            const response = await fetch(
+                `/api/positions/${encodeURIComponent(symbol)}/close`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+            );
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                btn.textContent = '已平仓';
+                // 立即刷新，并在稍后补刷一次（交易所持仓状态有延迟）
+                await Promise.all([this.loadPositionsData(), this.loadAccountData()]);
+                setTimeout(() => this.loadPositionsData(), 3000);
+                return;
+            }
+
+            alert(`平仓 ${symbol} 失败：\n${data.error || data.message || '未知错误'}`);
+        } catch (error) {
+            alert(`平仓 ${symbol} 请求失败：${error.message}`);
+        }
+
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 
     // 加载条件单数据（止盈止损）- 只显示活跃的条件单

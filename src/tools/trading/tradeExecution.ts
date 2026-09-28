@@ -1006,8 +1006,9 @@ export const closePositionTool = createTool({
       'peak_drawdown',     // 峰值回撤平仓
       'time_limit',        // 持仓时间到期
     ]).optional().describe("平仓原因代码（可选）：trend_reversal=趋势反转, manual_close=AI手动平仓（默认）, peak_drawdown=峰值回撤, time_limit=持仓时间到期"),
+    force: z.boolean().optional().default(false).describe("跳过最小持仓时间检查。仅供监控界面的人工手动平仓使用，AI 不得主动设置此项"),
   }),
-  execute: async ({ symbol, percentage, reason = 'manual_close' }) => {
+  execute: async ({ symbol, percentage, reason = 'manual_close', force = false }) => {
     const exchangeClient = getExchangeClient();
     const contract = exchangeClient.normalizeContract(symbol);
     
@@ -1069,11 +1070,16 @@ export const closePositionTool = createTool({
         const minHoldingMinutes = intervalMinutes / 2;
         
         // 如果持仓时间少于最小持仓时间，拒绝平仓
-        if (holdingMinutes < minHoldingMinutes) {
+        // force=true 时跳过（仅限监控界面人工手动平仓）
+        if (holdingMinutes < minHoldingMinutes && !force) {
           return {
             success: false,
             message: `拒绝平仓 ${symbol}：持仓时间仅 ${holdingMinutes.toFixed(1)} 分钟，少于最小持仓时间 ${minHoldingMinutes.toFixed(1)} 分钟。请等待至少半个交易周期后再评估平仓。这是为了防止在同一周期内刚开仓就立即平仓，造成不必要的手续费损失。`,
           };
+        }
+        
+        if (holdingMinutes < minHoldingMinutes && force) {
+          logger.warn(`⚠️ 人工手动平仓跳过最小持仓时间检查: ${symbol} 持仓 ${holdingMinutes.toFixed(1)} 分钟 < ${minHoldingMinutes.toFixed(1)} 分钟`);
         }
         
         logger.info(`${symbol} 持仓时间: ${holdingMinutes.toFixed(1)} 分钟，通过最小持仓时间检查`);

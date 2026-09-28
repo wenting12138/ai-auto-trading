@@ -1143,6 +1143,40 @@ body {
     font-weight: 600;
 }
 
+/* 持仓「平仓」按钮 */
+.positions-table .close-position-btn {
+    background: rgba(255, 0, 0, 0.08);
+    border: 1px solid rgba(255, 0, 0, 0.5);
+    color: var(--accent-red);
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 0.32rem 0.85rem;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.positions-table .close-position-btn:hover:not(:disabled) {
+    background: rgba(255, 0, 0, 0.22);
+    border-color: var(--accent-red);
+    box-shadow: 0 0 8px rgba(255, 0, 0, 0.45);
+}
+
+.positions-table .close-position-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.positions-table .close-position-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    border-color: rgba(255, 0, 0, 0.25);
+    color: rgba(255, 0, 0, 0.6);
+    box-shadow: none;
+}
+
 /* 条件单类型样式 */
 .positions-table .order-type {
     padding: 0.25rem 0.75rem;

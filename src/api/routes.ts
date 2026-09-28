@@ -27,6 +27,8 @@ import { getExchangeClient } from "../exchanges";
 import { createLogger } from "../utils/logger";
 import { formatPrice, formatUSDT, formatPercent, getDecimalPlacesBySymbol } from "../utils/priceFormatter";
 import { performHealthCheck } from "../scheduler/healthCheck";
+import { RISK_PARAMS } from "../config/riskParams";
+import { closePositionTool } from "../tools/trading/tradeExecution";
 
 const logger = createLogger({
   name: "api-routes",
@@ -163,6 +165,63 @@ export function createApiRoutes() {
       });
     } catch (error: any) {
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * 人工手动平仓（监控界面「平仓」按钮）
+   *
+   * 直接复用 AI 的 closePosition 工具，确保以下逻辑与自动平仓完全一致：
+   * - 撤销交易所侧止损/止盈条件单
+   * - 精度修正、最小下单量校验
+   * - 数据库持仓状态与平仓盈亏记录
+   *
+   * force=true 跳过「最小持仓时间」检查：该检查用于防止 AI 在同一周期内
+   * 反复开平仓产生手续费损耗，人工主动干预时不应被它拦住。
+   */
+  app.post("/api/positions/:symbol/close", async (c) => {
+    const symbol = String(c.req.param("symbol") || "").trim().toUpperCase();
+
+    // 只允许平掉当前配置的交易币种，避免通过接口平掉任意合约
+    if (!RISK_PARAMS.TRADING_SYMBOLS.includes(symbol)) {
+      return c.json({
+        success: false,
+        error: `不支持的币种: ${symbol}`,
+        allowedSymbols: RISK_PARAMS.TRADING_SYMBOLS,
+      }, 400);
+    }
+
+    const execute = closePositionTool.execute;
+    if (typeof execute !== "function") {
+      logger.error("closePosition 工具不可用，无法执行人工平仓");
+      return c.json({ success: false, symbol, error: "平仓工具不可用" }, 500);
+    }
+
+    try {
+      logger.info(`🖐️ 收到人工平仓请求: ${symbol}`);
+
+      const result: any = await execute({
+        symbol,
+        percentage: 100,
+        reason: "manual_close",
+        force: true,
+      });
+
+      if (result?.success) {
+        logger.info(`✅ 人工平仓成功: ${symbol}`);
+        return c.json({ success: true, symbol, result });
+      }
+
+      logger.warn(`⚠️ 人工平仓未完成: ${symbol} - ${result?.message || "未知原因"}`);
+      return c.json({
+        success: false,
+        symbol,
+        result,
+        error: result?.message || "平仓失败",
+      }, 400);
+    } catch (error: any) {
+      logger.error(`❌ 人工平仓异常: ${symbol} - ${error.message}`);
+      return c.json({ success: false, symbol, error: error.message }, 500);
     }
   });
 
