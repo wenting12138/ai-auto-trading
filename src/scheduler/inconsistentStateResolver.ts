@@ -193,6 +193,10 @@ export class InconsistentStateResolver {
       case 'price_order_triggered':
         return await this.resolvePriceOrderTriggered(state, exchangeClient);
       
+      case 'price_order_triggered_no_trade':
+        // 条件单触发但未能记录成交明细（由 priceOrderMonitor 写入）
+        return await this.resolvePriceOrderTriggeredNoTrade(state, exchangeClient);
+      
       default:
         logger.warn(`未知的操作类型: ${state.operation}`);
         return false;
@@ -370,6 +374,67 @@ export class InconsistentStateResolver {
   private async resolvePriceOrderTriggered(state: any, exchangeClient: any): Promise<boolean> {
     // 复用 resolveClosePosition 的逻辑
     return await this.resolveClosePosition(state, exchangeClient);
+  }
+
+  /**
+   * 修复「条件单触发但未找到成交记录」的不一致
+   *
+   * 背景：这类记录的 exchange_order_id 存的是条件单（算法单）的 id，条件单触发后
+   * 交易所实际成交的是一笔**新的普通订单**，两者 id 不同。因此若直接复用
+   * resolveClosePosition 按 id 匹配成交，必然匹配失败、永远返回 false，
+   * 记录无法销账，健康检查会永久报「发现未解决的不一致状态」。
+   *
+   * 处理策略：
+   * 1. 先确认交易所侧确实已无该持仓 —— 这是判断不一致是否仍然存在的唯一依据
+   * 2. 在更宽的窗口内尽力回填成交明细（可能因订单号对不上而失败）
+   * 3. 持仓确认已消失即销账：持仓层面状态已一致，遗留的只是历史成交明细缺失，
+   *    不应让健康检查永久告警
+   *
+   * 注意：若交易所仍有该持仓，说明状态确实不一致，返回 false 交由人工处理。
+   */
+  private async resolvePriceOrderTriggeredNoTrade(state: any, exchangeClient: any): Promise<boolean> {
+    const { symbol, side, exchange_order_id } = state;
+
+    logger.info(`🔧 修复条件单触发无成交记录: ${symbol} ${side} (条件单=${exchange_order_id})`);
+
+    const contract = exchangeClient.normalizeContract(symbol);
+    const parseSize = (value: any): number => {
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const parsed = Number.parseFloat(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      }
+      return 0;
+    };
+
+    // 1. 交易所是否仍有该持仓
+    const positions = await exchangeClient.getPositions();
+    const stillOpen = positions.some(
+      (p: any) => p.contract === contract && Math.abs(parseSize(p.size)) > 0
+    );
+
+    if (stillOpen) {
+      logger.warn(`${symbol} 持仓仍存在于交易所，状态确实不一致，跳过自动销账`);
+      return false;
+    }
+
+    // 2. 尽力回填成交明细
+    try {
+      const backfilled = await this.resolveClosePosition(state, exchangeClient);
+      if (backfilled) {
+        logger.info(`✅ 已回填 ${symbol} 的平仓成交明细`);
+      } else {
+        logger.warn(
+          `${symbol} 无法回填成交明细（条件单号与触发后产生的订单号不同），` +
+          `但交易所已无持仓，按状态一致销账`
+        );
+      }
+    } catch (error: any) {
+      logger.warn(`回填 ${symbol} 成交明细异常: ${error.message}，按持仓已平销账`);
+    }
+
+    // 3. 持仓确认已消失 -> 销账
+    return true;
   }
 }
 

@@ -264,8 +264,17 @@ export function adjustQuantityPrecision(quantity: number, minQty: number): numbe
   const decimalPlaces = getQuantityDecimalPlaces(minQty);
   const multiplier = Math.pow(10, decimalPlaces);
   
-  // 向下取整到指定精度（防止浮点数累积误差）
-  const adjusted = Math.floor(quantity * multiplier) / multiplier;
+  // 向下取整到指定精度，确保不超过原始数量
+  //
+  // 🔧 浮点容差处理：double 无法精确表示大多数小数。交易所返回的持仓量 13.607
+  // 参与运算后可能变成 13.606999999999998，×1000 = 13606.999999999998，
+  // 直接 floor 得到 13606 → 13.606，于是「100% 平仓」少平了一个最小变动单位，
+  // 在交易所留下 0.001 的粉尘残仓（触发健康检查「交易所有但数据库没有的持仓」）。
+  // 因此当缩放值与最近整数之差落在容差内时，判定为浮点误差并取整。
+  const scaled = quantity * multiplier;
+  const nearest = Math.round(scaled);
+  const tolerance = Math.max(1e-9, Math.abs(scaled) * 1e-12);
+  const adjusted = (Math.abs(scaled - nearest) <= tolerance ? nearest : Math.floor(scaled)) / multiplier;
   
   return adjusted;
 }
