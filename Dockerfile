@@ -1,5 +1,7 @@
-# 使用 Node.js 20 LTS 版本作为基础镜像
-FROM node:20-alpine
+# 使用 Node.js 24 LTS 版本作为基础镜像
+# 说明：必须 >= 24，因为出口代理依赖 Node 24 内置的 NODE_USE_ENV_PROXY
+# （Node 20 的 fetch 不读取 HTTP_PROXY/HTTPS_PROXY，代理环境变量会静默失效）
+FROM node:24-alpine
 
 # 设置工作目录
 WORKDIR /app

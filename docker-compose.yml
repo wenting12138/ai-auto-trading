@@ -14,6 +14,15 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=Asia/Shanghai
+      # 出口代理：经宿主机 Clash(7890) 出海，避免国内直连被 Binance 封禁/地域限制
+      # NODE_USE_ENV_PROXY 是 Node 24 内置能力，Node 20 的 fetch 不认这些变量
+      - NODE_USE_ENV_PROXY=1
+      - HTTP_PROXY=http://host.docker.internal:7890
+      - HTTPS_PROXY=http://host.docker.internal:7890
+      - NO_PROXY=localhost,127.0.0.1
+    # 让容器能通过 host.docker.internal 访问宿主机上的 Clash
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # 挂载数据库目录以持久化数据
       - ./voltagent-data:/app/.voltagent
